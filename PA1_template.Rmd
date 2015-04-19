@@ -5,21 +5,98 @@ output:
     keep_md: true
 ---
 
-
 ## Loading and preprocessing the data
 
-
+```{r}
+library(data.table)
+tbl <- read.csv("activity.csv")
+tbl <- data.table(tbl)
+```
 
 ## What is mean total number of steps taken per day?
 
+```{r}
+steps_per_day <- tbl[,list(Steps = sum(steps)), by=date]
+summary(steps_per_day$Steps)
+```
 
+Here is how steps are distributed:
+
+```{r}
+hist(steps_per_day$Steps,
+     breaks = 10,
+     main = "Total Steps by Day",
+     xlab = "Steps")
+```
 
 ## What is the average daily activity pattern?
 
+Let's find an interval with a maximum average steps:
+```{r}
+steps_by_interval <- tbl[,list(MeanSteps = mean(steps, na.rm = TRUE)), by = interval]
+maxInt <- steps_by_interval[which.max(MeanSteps), ]
+```
 
+So, our maximum interval is **`r maxInt$interval`** with **`r round(maxInt$MeanSteps)`** steps on average.
+
+Now let's see the pattern:
+```{r}
+
+with(steps_by_interval, plot(x = interval, y = MeanSteps, type = "l"))
+```
 
 ## Imputing missing values
 
+Let's see how many NA's are there in our dataset:
+```{r}
+tbl[is.na(steps), .N]
+```
 
+Now let our strategy for filling missing values be simply taking means of each interval over all days. This should allow us to keep all important statistics almost unchanged by days and by individual intervals.
+
+```{r}
+tbl_filled <- copy(tbl)
+setkey(steps_by_interval, interval)
+setkey(tbl_filled, interval)
+tbl_filled[steps_by_interval, Means := as.integer(round(MeanSteps))]
+tbl_filled[is.na(steps), steps := Means]
+tbl_filled[, Means := NULL]
+tbl_filled[is.na(steps), .N]
+```
+
+Now let's look at the new statistics:
+
+```{r}
+steps_per_day_filled <- tbl_filled[,list(Steps = sum(steps)), by=date]
+summary(steps_per_day_filled$Steps)
+```
+
+Here is our corrected distribution:
+
+```{r}
+hist(steps_per_day_filled$Steps,
+     breaks = 10,
+     main = "Total Steps by Day",
+     xlab = "Steps")
+```
+
+We now see that the mean and the median are still the same, but our histogram now shows more days around mean value, while all other bars seem to remain unchanged. This kind of behavior is expected because we have generated more values close to means.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+Let's add a variable to identify weekdays:
+
+```{r}
+wkday <- weekdays(as.POSIXlt(tbl_filled$date), abbreviate = TRUE)
+wkday <- wkday %in% c("Sat", "Sun")
+wkday <- factor(ifelse(wkday, "weekend", "weekday"))
+tbl_filled[,WD := wkday]
+```
+
+Now let's create a plot:
+
+```{r}
+library(lattice)
+wkday_data <- tbl_filled[, list(Mean = mean(steps)), by=.(interval, WD)]
+xyplot(Mean ~ interval | WD, data = wkday_data, panel = "panel.lines", layout = c(1, 2), ylab = "Mean Steps")
+```
